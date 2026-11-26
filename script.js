@@ -8,7 +8,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (matchMedia("(pointer:fine)").matches) {
     let x = innerWidth/2, y = innerHeight/2, tx = x, ty = y;
     addEventListener("mousemove", e => { tx = e.clientX; ty = e.clientY; dot.style.opacity = 1; }, {passive:true});
-    (function tick(){ x += (tx-x)*.25; y += (ty-y)*.25; dot.style.left = x+"px"; dot.style.top = y+"px"; requestAnimationFrame(tick); })();
+    (function tick(){ x += (tx-x)*.25; y += (ty-y)*.25; const z = parseFloat(getComputedStyle(document.documentElement).zoom) || 1; dot.style.left = (x/z)+"px"; dot.style.top = (y/z)+"px"; requestAnimationFrame(tick); })();
     $("a,button").forEach(el => {
       el.addEventListener("mouseenter", () => { dot.style.transform = "translate(-50%,-50%) scale(2.2)"; dot.style.background = "var(--accent)"; });
       el.addEventListener("mouseleave", () => { dot.style.transform = "translate(-50%,-50%) scale(1)"; dot.style.background = "var(--dot)"; });
@@ -16,9 +16,32 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   
-  const targets = $(".statement h2,.statement p,.about-extra,.section-head,.skill-group,.research-row,.project-card,.contact h2,.contact-email,.contact-bottom,.plane");
+  const hdr = document.querySelector(".site-header"), mb = document.querySelector(".menu-btn");
+  const setMenu = o => { hdr.classList.toggle("menu-open", o); mb.setAttribute("aria-expanded", o); mb.setAttribute("aria-label", o ? "Close menu" : "Open menu"); };
+  mb.addEventListener("click", () => setMenu(!hdr.classList.contains("menu-open")));
+  $(".nav a").forEach(a => a.addEventListener("click", () => setMenu(false)));
+  addEventListener("resize", () => { if (innerWidth > 850) setMenu(false); });
+
+  const role = document.querySelector(".hero-role span");
+  if (role && !calm) {
+    const words = ["AI & ML Research Enthusiast", "Backend Developer"];
+    role.setAttribute("aria-label", "AI & ML Research Enthusiast and Backend Developer");
+    role.innerHTML = '<span class="typed" aria-hidden="true"></span><span class="caret" aria-hidden="true"></span>';
+    const out = role.querySelector(".typed"); let w = 0, c = 0, del = false;
+    const tick = () => {
+      const word = words[w];
+      if (!del) { c++; out.textContent = word.slice(0, c); if (c === word.length) { del = true; return setTimeout(tick, 1800); } return setTimeout(tick, 85); }
+      c--; out.textContent = word.slice(0, c);
+      if (c === 0) { del = false; w = (w+1) % words.length; return setTimeout(tick, 380); }
+      setTimeout(tick, 42);
+    };
+    setTimeout(tick, 1100);
+  }
+
+  const targets = $(".statement h2,.statement p,.about-extra,.section-head,.skill-group,.exp-item,.exp-title,.profiles,.research-row,.project-card,.contact h2,.contact-email,.contact-bottom,.plane");
   targets.forEach(e => e.setAttribute("data-r", ""));
   targets.forEach(e => { const i = [...e.parentNode.children].filter(c => c.hasAttribute("data-r")).indexOf(e); e.style.setProperty("--d", (i*.1)+"s"); });
+  $(".skill-group").forEach((g, i) => g.style.setProperty("--d", [0, .35, .7, .95][i] + "s"));
   const count = el => { const n = +el.dataset.count; let k = 0; const t = setInterval(() => { el.textContent = ++k; if (k >= n) clearInterval(t); }, 350); };
   const io = new IntersectionObserver(es => es.forEach(en => {
     if (!en.isIntersecting) return;
@@ -41,12 +64,44 @@ document.addEventListener("DOMContentLoaded", () => {
   $('a[href^="#"]').forEach(a => a.addEventListener("click", e => {
     const t = document.querySelector(a.getAttribute("href")); if (!t || calm) return;
     e.preventDefault(); wipe.className = "wipe in";
-    setTimeout(() => { scrollTo({top: t.id === "home" ? 0 : t.getBoundingClientRect().top+scrollY-document.querySelector(".site-header").offsetHeight+1, behavior:"auto"}); wipe.className = "wipe out"; }, 460);
+    setTimeout(() => { document.body.classList.add("no-stack"); const topY = t.getBoundingClientRect().top+scrollY-document.querySelector(".site-header").getBoundingClientRect().height+1; document.body.classList.remove("no-stack"); scrollTo({top: t.id === "home" ? 0 : topY, behavior:"auto"}); wipe.className = "wipe out"; }, 460);
     setTimeout(() => wipe.className = "wipe", 1100);
   }));
+  const stack = ["home","about","skills","research","projects","experience","contact"].map(id => document.getElementById(id)).filter(Boolean);
+  if (!calm) {
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v)), ease = v => v*v*(3-2*v);
+    const geo = [];
+    const measure = () => {
+      document.body.classList.add("no-stack");
+      stack.forEach((s, i) => { const r = s.getBoundingClientRect(); geo[i] = { top: r.top+scrollY, h: r.height }; });
+      document.body.classList.remove("no-stack");
+    };
+    let queued = false;
+    const stackUpdate = () => {
+      queued = false;
+      const vh = innerHeight, phone = innerWidth < 700;
+      const dIn = phone ? .08 : .13, dOut = phone ? .06 : .1;
+      stack.forEach((s, i) => {
+        if (!geo[i]) return;
+        const top = geo[i].top-scrollY, bottom = top+geo[i].h;
+        const p = i === 0 ? 1 : ease(clamp((vh*.95-top)/(vh*.75), 0, 1));
+        const t = i === stack.length-1 ? 0 : Math.pow(clamp((vh*.6-bottom)/(vh*.6), 0, 1), 1.15);
+        if (p === 1 && t === 0) { if (s.style.transform) { s.style.transform = ""; s.style.opacity = ""; s.style.borderRadius = ""; } return; }
+        s.style.transformOrigin = p < 1 ? "50% 0%" : "50% 100%";
+        s.style.transform = "scale(" + ((1-dIn*(1-p))*(1-dOut*t)) + ")";
+        s.style.opacity = (1-.65*(1-p))*(1-.55*t);
+        s.style.borderRadius = ((1-p)*32+t*30) + "px";
+      });
+    };
+    const refresh = () => { measure(); stackUpdate(); };
+    addEventListener("scroll", () => { if (!queued) { queued = true; requestAnimationFrame(stackUpdate); } }, {passive:true});
+    addEventListener("resize", refresh); addEventListener("load", refresh);
+    refresh(); setTimeout(refresh, 800); setTimeout(refresh, 2500);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(refresh);
+  }
   const links = $(".nav a");
   const bar = $(".progress")[0];
-  const ids = ["home","about","skills","research","projects","contact"].map(i => document.getElementById(i));
+  const ids = ["home","about","skills","research","projects","experience","contact"].map(i => document.getElementById(i));
 
   
   const par = $(".hero-visual,.big,.plane");
@@ -63,7 +118,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const cv = document.getElementById("bg3d");
   if (!window.THREE || !cv) return;
   const T = THREE, R = new T.WebGLRenderer({canvas:cv, alpha:true, antialias:true});
-  R.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+  R.setPixelRatio(Math.min(devicePixelRatio, innerWidth < 800 ? 1.25 : 1.75));
   const S = new T.Scene(), C = new T.PerspectiveCamera(55, 1, .1, 100); C.position.z = 9;
   const G = 0x5d7567, M = () => new T.MeshBasicMaterial({color:G, wireframe:true, transparent:true, opacity:0});
   const grp = (n, f) => { const g = new T.Group(); for (let i = 0; i < n; i++) g.add(f(i)); return g; };
@@ -77,14 +132,15 @@ document.addEventListener("DOMContentLoaded", () => {
     new T.Mesh(new T.OctahedronGeometry(2.4, 1), M()),
     helix,
     grp(8, i => { const m = new T.Mesh(new T.BoxGeometry(1.5,1.5,1.5), M()); m.position.set((i%2-.5)*2.6, ((i>>1)%2-.5)*2.6, ((i>>2)-.5)*2.6); return m; }),
+    new T.Mesh(new T.DodecahedronGeometry(2.3, 0), M()),
     grp(4, i => { const m = new T.Mesh(new T.TorusGeometry(1+i*.55, .015, 8, 120), M()); m.rotation.x = i*.6; return m; })
   ];
   shapes.forEach(s => S.add(s));
-  const sp = []; for (let i = 0; i < 900; i++) sp.push((Math.random()-.5)*40, (Math.random()-.5)*40, (Math.random()-.5)*30);
+  const sp = []; for (let i = 0, n = innerWidth < 800 ? 350 : 900; i < n; i++) sp.push((Math.random()-.5)*40, (Math.random()-.5)*40, (Math.random()-.5)*30);
   const sg = new T.BufferGeometry(); sg.setAttribute("position", new T.Float32BufferAttribute(sp, 3));
   const stars = new T.Points(sg, new T.PointsMaterial({color:0x718c7b, size:.05, transparent:true, opacity:.4})); S.add(stars);
   const setO = (o, v) => o.traverse(n => { if (n.material) n.material.opacity = v; });
-  const X = [3.4, -3.4, 3.4, -3.4, 3.4, 3.2], op = [0,0,0,0,0,0];
+  const X = [3.4, -3.4, 3.4, -3.4, 3.4, -3.4, 3.2], op = [0,0,0,0,0,0,0];
   let mx = 0, my = 0, prev = scrollY;
   addEventListener("mousemove", e => { mx = e.clientX/innerWidth-.5; my = e.clientY/innerHeight-.5; }, {passive:true});
   const size = () => { R.setSize(innerWidth, innerHeight, false); C.aspect = innerWidth/innerHeight; C.updateProjectionMatrix(); };
